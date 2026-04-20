@@ -11,7 +11,7 @@ import { COLORS, FONTS } from '../constants/theme';
 import SplashScreen from '../screens/Auth/SplashScreen';
 import LoginScreen from '../screens/Auth/LoginScreen';
 import OTPScreen from '../screens/Auth/OTPScreen';
-import SetupProfileScreen from '../screens/Auth/SetupProfileScreen';
+import SetupProfileScreen from '../screens/Auth/SetupProfile';
 import HomeScreen from '../screens/Home/HomeScreen';
 import TournamentsScreen from '../screens/Tournament/TournamentsScreen';
 import TournamentDetailScreen from '../screens/Tournament/TournamentDetailScreen';
@@ -25,6 +25,7 @@ import ClanScreen from '../screens/Clan/ClanScreen';
 import NotificationsScreen from '../screens/Profile/NotificationsScreen';
 import MissionsScreen from '../screens/Profile/MissionsScreen';
 import BountyScreen from '../screens/Home/BountyScreen';
+import PredictScreen from '../screens/Tournament/PredictScreen';
 import KYCScreen from '../screens/Profile/KYCScreen';
 
 const Stack = createStackNavigator();
@@ -105,6 +106,7 @@ const AppNavigator = () => {
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
             <Stack.Screen name="Missions" component={MissionsScreen} />
             <Stack.Screen name="Bounty" component={BountyScreen} />
+            <Stack.Screen name="Predict" component={PredictScreen} />
             <Stack.Screen name="KYC" component={KYCScreen} />
           </>
         )}

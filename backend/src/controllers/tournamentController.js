@@ -92,17 +92,24 @@ exports.getTournamentById = async (req, res) => {
     `, [id]);
 
     // Don't show room ID until 15 min before
+    // Don't show mode for blind drops until 10 min before
     const now = new Date();
     const matchTime = new Date(tournament.scheduled_at);
     const minutesUntilMatch = (matchTime - now) / 1000 / 60;
 
+    const room_revealed = minutesUntilMatch <= 15;
+    const is_blind = tournament.is_blind_drop || tournament.mode === 'blind_drop';
+    const blind_revealed = minutesUntilMatch <= 10;
+
     const response = {
       ...tournament,
+      mode: (is_blind && !blind_revealed) ? 'blind_drop' : tournament.mode,
       players: players.rows,
       user_registration: userRegistration,
-      room_revealed: minutesUntilMatch <= 15,
-      room_id: minutesUntilMatch <= 15 ? tournament.room_id : null,
-      room_password: minutesUntilMatch <= 15 ? tournament.room_password : null,
+      room_revealed,
+      blind_revealed,
+      room_id: room_revealed ? tournament.room_id : null,
+      room_password: room_revealed ? tournament.room_password : null,
     };
 
     await cacheTournament(id, response);
@@ -399,6 +406,33 @@ const creditPrize = async (tournamentId, userId, rank, kills, resultId) => {
       );
     }
 
+    // Trigger Last Bullet 1v1 if applicable (Top 2 move to sudden death)
+    if (rank === 1 || rank === 2) {
+      // Find the "other" top player
+      const otherRank = rank === 1 ? 2 : 1;
+      const opponent = await queryOne(
+        'SELECT id FROM tournament_results WHERE tournament_id=$1 AND rank=$2',
+        [tournamentId, otherRank]
+      );
+
+      if (opponent) {
+        // Create 1v1 challenge record
+        await query(
+          `INSERT INTO last_bullet_challenges (tournament_id, player1_id, player2_id, status, expires_at)
+           VALUES ($1, $2, $3, 'pending', NOW() + INTERVAL '5 minutes')
+           ON CONFLICT DO NOTHING`,
+          [tournamentId, userId, opponent.id]
+        );
+
+        // Notify both players
+        await sendPushNotification(userId, {
+          title: '🔥 Last Bullet Challenge!',
+          body: `You and your rival are the top 2! 1v1 challenge initiated for prize boost.`,
+          data: { type: 'last_bullet_trigger', tournament_id: tournamentId }
+        });
+      }
+    }
+
     // Send notification
     const message = tournament.is_free
       ? `🪙 ${coinAmount} BlazeGold credited for Rank #${rank}!`
@@ -438,5 +472,45 @@ exports.getMyTournaments = async (req, res) => {
     res.json({ success: true, data: { tournaments: tournaments.rows } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch tournaments' });
+  }
+};
+
+/**
+ * placePrediction: Allow spectators to predict winners for rewards
+ */
+exports.placePrediction = async (req, res) => {
+  try {
+    const { tournamentId, targetUserId, amount } = req.body;
+    const userId = req.user.id;
+
+    if (amount <= 0) return res.status(400).json({ success: false, message: 'Invalid prediction amount' });
+
+    await withTransaction(async (client) => {
+      // 1. Check user balance
+      const user = await client.query('SELECT coin_balance FROM users WHERE id = $1', [userId]);
+      if (user.rows[0].coin_balance < amount) {
+        throw new Error('Insufficient BlazeGold coins');
+      }
+
+      // 2. Verify tournament is LIVE
+      const tournament = await client.query('SELECT status FROM tournaments WHERE id = $1', [tournamentId]);
+      if (!tournament.rows[0] || tournament.rows[0].status !== 'live') {
+        throw new Error('Predictions can only be placed on Live tournaments');
+      }
+
+      // 3. Subtract coins
+      await client.query('UPDATE users SET coin_balance = coin_balance - $1 WHERE id = $2', [amount, userId]);
+
+      // 4. Record prediction (Multiplier logic based on PRD: 2x base for now)
+      await client.query(
+        `INSERT INTO predictions (user_id, tournament_id, target_user_id, amount, multiplier, status)
+         VALUES ($1, $2, $3, $4, 2.0, 'pending')`,
+        [userId, tournamentId, targetUserId, amount]
+      );
+    });
+
+    res.json({ success: true, message: 'Prediction placed! Good luck!' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Error placing prediction' });
   }
 };

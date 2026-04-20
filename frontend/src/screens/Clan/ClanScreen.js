@@ -277,31 +277,4 @@ const styles = StyleSheet.create({
   joinBtnText: { color: COLORS.primary, fontWeight: '800', fontSize: FONTS.sizes.sm },
 });
 
-const styles2 = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.base, paddingTop: 56 },
-  back: { color: COLORS.primary, fontSize: FONTS.sizes.base, fontWeight: '600' },
-  title: { fontSize: FONTS.sizes.xl, fontWeight: '900', color: COLORS.text },
-  scroll: { flex: 1, padding: SPACING.base },
-  balanceCard: { backgroundColor: COLORS.bg3, borderRadius: RADIUS.lg, padding: SPACING.xl, alignItems: 'center', marginBottom: 24, borderWidth: 1, borderColor: COLORS.goldGlow },
-  balLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, letterSpacing: 2 },
-  balAmount: { fontSize: FONTS.sizes.hero, fontWeight: '900', color: COLORS.gold, marginTop: 4 },
-  label: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg3, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.borderLight },
-  rupee: { fontSize: FONTS.sizes.xl, color: COLORS.textMuted, paddingHorizontal: SPACING.base },
-  input: { flex: 1, fontSize: FONTS.sizes.xl, fontWeight: '700', color: COLORS.text, padding: SPACING.base },
-  methodRow: { flexDirection: 'row', gap: 12 },
-  methodBtn: { flex: 1, padding: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.bg3, alignItems: 'center', borderWidth: 1, borderColor: COLORS.borderLight },
-  methodBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryGlow },
-  methodText: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, fontWeight: '600' },
-  upiInput: { backgroundColor: COLORS.bg3, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.borderLight, padding: SPACING.base, color: COLORS.text, fontSize: FONTS.sizes.base },
-  infoCard: { backgroundColor: COLORS.bg3, borderRadius: RADIUS.md, padding: SPACING.md, marginTop: 16, gap: 6 },
-  infoText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
-  btn: { borderRadius: RADIUS.lg, overflow: 'hidden', marginTop: 24 },
-  disabled: { opacity: 0.5 },
-  btnGrad: { padding: SPACING.base + 4, alignItems: 'center' },
-  btnText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '800', letterSpacing: 1 },
-});
-
-export { ClanScreen, WithdrawScreen };
 export default ClanScreen;

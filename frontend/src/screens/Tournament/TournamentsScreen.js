@@ -1,271 +1,199 @@
 // screens/Tournament/TournamentsScreen.js
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
-import { fetchTournaments, setFilter } from '../../store/slices/tournamentSlice';
-import TournamentCard from '../../components/tournament/TournamentCard';
-import ModeFilterChip from '../../components/common/ModeFilterChip';
-import { COLORS, FONTS, SPACING } from '../../constants/theme';
-import { TOURNAMENT_MODES } from '../../constants/theme';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  RefreshControl, ActivityIndicator, Image
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { COLORS, FONTS, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
+import api from '../../services/api';
 
 const TournamentsScreen = ({ navigation }) => {
-  const dispatch = useDispatch();
-  const { list, isLoading, filters } = useSelector(s => s.tournaments);
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [freeOnly, setFreeOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [tournaments, setTournaments] = useState([]);
+  const [filter, setFilter] = useState('ALL'); // ALL, SOLO, DUO, SQUAD
+
+  const fetchTournaments = async () => {
+    try {
+      const res = await api.get('/tournaments');
+      if (res.success) {
+        setTournaments(res.data);
+      }
+    } catch (error) {
+      console.error('Fetch tournaments error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    dispatch(fetchTournaments({ mode: filters.mode, is_free: filters.is_free }));
-  }, [filters]);
+    fetchTournaments();
+  }, []);
 
-  const applyFilter = (mode) => {
-    setActiveFilter(mode);
-    dispatch(setFilter({ mode: mode === 'all' ? null : mode }));
-    dispatch(fetchTournaments({ mode: mode === 'all' ? undefined : mode }));
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchTournaments();
+  }, []);
 
-  const toggleFree = () => {
-    setFreeOnly(!freeOnly);
-    dispatch(setFilter({ is_free: !freeOnly ? true : null }));
-  };
+  const filteredTournaments = tournaments.filter(t => 
+    filter === 'ALL' ? true : t.mode.toUpperCase() === filter
+  );
+
+  const renderTournament = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.card}
+      activeOpacity={0.9}
+      onPress={() => navigation.navigate('TournamentDetail', { id: item.id })}
+    >
+      <View style={styles.cardMain}>
+        <View style={styles.cardHeader}>
+          <View style={styles.badgeRow}>
+             <View style={[styles.modeBadge, { backgroundColor: COLORS.primary }]}>
+                <Text style={styles.badgeText}>{item.is_blind_drop ? '🕵️ BLIND DROP' : item.mode.toUpperCase()}</Text>
+             </View>
+             {item.is_free && (
+               <View style={[styles.modeBadge, { backgroundColor: COLORS.gold }]}>
+                  <Text style={styles.badgeText}>FREE ENTRY</Text>
+               </View>
+             )}
+          </View>
+          <Text style={styles.timeText}>🕒 {new Date(item.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+        </View>
+
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.mapText}>🗺️ Map: {item.map || 'Bermuda'}</Text>
+
+        <View style={styles.prizeContainer}>
+          <View style={styles.prizeSub}>
+            <Text style={styles.prizeLabel}>PRIZE POOL</Text>
+            <Text style={styles.prizeVal}>₹{item.prize_pool}</Text>
+          </View>
+          <View style={styles.prizeSub}>
+            <Text style={styles.prizeLabel}>ENTRY FEE</Text>
+            <Text style={[styles.prizeVal, item.is_free && { color: COLORS.success }]}>
+              {item.is_free ? 'FREE' : `₹${item.entry_fee}`}
+            </Text>
+          </View>
+          <View style={styles.prizeSub}>
+            <Text style={styles.prizeLabel}>PER KILL</Text>
+            <Text style={styles.prizeVal}>₹{item.per_kill || '0'}</Text>
+          </View>
+        </View>
+
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressRow}>
+            <Text style={styles.progressText}>Slots: {item.slots_filled}/{item.total_slots}</Text>
+            <Text style={styles.progressPercent}>{Math.round((item.slots_filled / item.total_total_slots) * 100 || 0)}%</Text>
+          </View>
+          <View style={styles.progressBarBg}>
+            <View 
+              style={[
+                styles.progressBarFill, 
+                { width: `${(item.slots_filled / item.total_slots) * 100}%` }
+              ]} 
+            />
+          </View>
+        </View>
+      </View>
+      <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.joinBtn}>
+          <Text style={styles.joinText}>VIEW DETAILS</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>🎮 Tournaments</Text>
-        <TouchableOpacity style={[styles.freeToggle, freeOnly && styles.freeToggleActive]} onPress={toggleFree}>
-          <Text style={[styles.freeToggleText, freeOnly && styles.freeToggleTextActive]}>
-            🎁 FREE ONLY
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <LinearGradient colors={[COLORS.bg2, COLORS.bg]} style={styles.header}>
+        <Text style={styles.headerTitle}>TOURNAMENTS</Text>
+        <View style={styles.filterContainer}>
+          {['ALL', 'SOLO', 'DUO', 'SQUAD'].map((f) => (
+            <TouchableOpacity 
+              key={f} 
+              style={[styles.filterBtn, filter === f && styles.filterBtnActive]}
+              onPress={() => setFilter(f)}
+            >
+              <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </LinearGradient>
 
-      {/* Mode filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters} contentContainerStyle={styles.filtersContent}>
-        <ModeFilterChip label="All" icon="🎮" selected={activeFilter === 'all'} onPress={() => applyFilter('all')} />
-        {Object.entries(TOURNAMENT_MODES).map(([key, val]) => (
-          <ModeFilterChip key={key} label={val.label} icon={val.icon}
-            selected={activeFilter === key} onPress={() => applyFilter(key)} color={val.color} />
-        ))}
-      </ScrollView>
-
-      {/* Tournament list */}
-      <FlatList
-        data={list}
-        keyExtractor={t => t.id}
-        renderItem={({ item }) => (
-          <TournamentCard
-            tournament={item}
-            onPress={() => navigation.navigate('TournamentDetail', { id: item.id })}
-          />
-        )}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            {isLoading ? '⏳ Loading tournaments...' : 'Koi tournament nahi mila'}
-          </Text>
-        }
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredTournaments}
+          renderItem={renderTournament}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>🎮</Text>
+              <Text style={styles.emptyText}>No tournaments available right now. Check back soon!</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.base, paddingTop: 56 },
-  title: { fontSize: FONTS.sizes.xl, fontWeight: '900', color: COLORS.text },
-  freeToggle: { padding: 8, borderRadius: 6, borderWidth: 1, borderColor: COLORS.borderLight },
-  freeToggleActive: { backgroundColor: COLORS.goldGlow, borderColor: COLORS.gold },
-  freeToggleText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '700', letterSpacing: 1 },
-  freeToggleTextActive: { color: COLORS.gold },
-  filters: { maxHeight: 48 },
-  filtersContent: { paddingHorizontal: SPACING.base, gap: 8, alignItems: 'center' },
+  header: { paddingTop: 60, paddingBottom: 25, paddingHorizontal: SPACING.base },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: COLORS.white, textAlign: 'center', marginBottom: 20, letterSpacing: 2 },
+  filterContainer: { flexDirection: 'row', backgroundColor: COLORS.bg3, borderRadius: RADIUS.lg, padding: 4 },
+  filterBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: RADIUS.md },
+  filterBtnActive: { backgroundColor: COLORS.bg4, borderWidth: 1, borderColor: COLORS.primary },
+  filterText: { fontSize: 11, fontWeight: '800', color: COLORS.textMuted },
+  filterTextActive: { color: COLORS.primary },
   list: { padding: SPACING.base, paddingBottom: 100 },
-  empty: { textAlign: 'center', color: COLORS.textDim, padding: SPACING.xxxl },
+  card: {
+    backgroundColor: COLORS.bg2,
+    borderRadius: RADIUS.xl,
+    marginBottom: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.bg3,
+    ...SHADOWS.md
+  },
+  cardMain: { padding: SPACING.lg },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  badgeRow: { flexDirection: 'row', gap: 8 },
+  modeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.sm },
+  badgeText: { color: COLORS.white, fontSize: 10, fontWeight: '900' },
+  timeText: { color: COLORS.textMuted, fontSize: 11, fontWeight: '700' },
+  title: { fontSize: 18, fontWeight: '900', color: COLORS.white, marginBottom: 5 },
+  mapText: { fontSize: 11, color: COLORS.textDim, marginBottom: 15 },
+  prizeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: RADIUS.md,
+    padding: 12,
+    marginBottom: 20
+  },
+  prizeSub: { alignItems: 'center' },
+  prizeLabel: { fontSize: 9, color: COLORS.textDim, fontWeight: '700', marginBottom: 4 },
+  prizeVal: { fontSize: 15, fontWeight: '900', color: COLORS.white },
+  progressContainer: { marginBottom: 10 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  progressText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '700' },
+  progressPercent: { fontSize: 11, color: COLORS.primary, fontWeight: '900' },
+  progressBarBg: { height: 6, backgroundColor: COLORS.bg3, borderRadius: 3, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
+  joinBtn: { height: 45, justifyContent: 'center', alignItems: 'center' },
+  joinText: { color: COLORS.white, fontWeight: '900', letterSpacing: 1.5, fontSize: 12 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyContainer: { alignItems: 'center', marginTop: 100 },
+  emptyIcon: { fontSize: 50, marginBottom: 20 },
+  emptyText: { color: COLORS.textDim, textAlign: 'center', paddingHorizontal: 50, lineHeight: 20 }
 });
 
 export default TournamentsScreen;
-
-// ============================================
-// screens/Wallet/WalletScreen.js
-// ============================================
-import React, { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
-import { useDispatch, useSelector } from 'react-redux';
-import { fetchWallet, redeemCoins } from '../../store/slices/walletSlice';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
-import moment from 'moment';
-
-const WalletScreen = ({ navigation }) => {
-  const dispatch = useDispatch();
-  const { realCash, bonusCash, blazegold, transactions, isLoading } = useSelector(s => s.wallet);
-
-  useEffect(() => { dispatch(fetchWallet()); }, []);
-
-  const handleRedeem = () => {
-    if (blazegold < 500) return;
-    dispatch(redeemCoins(Math.floor(blazegold / 500) * 500));
-  };
-
-  const txIcon = (type) => {
-    const icons = { deposit: '💳', withdrawal: '🏦', tournament_win: '🏆', tournament_entry: '🎮', coin_redeem: '🪙', bonus: '🎁', referral: '👥' };
-    return icons[type] || '💰';
-  };
-
-  const txColor = (type) => {
-    const pos = ['deposit', 'tournament_win', 'bonus', 'referral', 'coin_redeem'];
-    return pos.includes(type) ? COLORS.green : COLORS.error;
-  };
-
-  return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.title}>💰 Wallet</Text>
-        </View>
-
-        {/* Balance Cards */}
-        <View style={styles.balanceGrid}>
-          <LinearGradient colors={['#1a1a00', '#2a2000']} style={[styles.balanceCard, styles.mainBalance]}>
-            <Text style={styles.balanceLabel}>Real Cash</Text>
-            <Text style={styles.balanceAmount}>₹{realCash.toFixed(2)}</Text>
-            <Text style={styles.balanceNote}>Withdrawable anytime</Text>
-          </LinearGradient>
-
-          <View style={styles.smallBalances}>
-            <View style={[styles.balanceCard, styles.smallCard]}>
-              <Text style={styles.smallLabel}>Bonus</Text>
-              <Text style={[styles.smallAmount, { color: COLORS.cyan }]}>₹{bonusCash.toFixed(2)}</Text>
-              <Text style={styles.smallNote}>Entry only</Text>
-            </View>
-            <View style={[styles.balanceCard, styles.smallCard]}>
-              <Text style={styles.smallLabel}>BlazeGold</Text>
-              <Text style={[styles.smallAmount, { color: COLORS.gold }]}>{blazegold} 🪙</Text>
-              <Text style={styles.smallNote}>= ₹{(blazegold / 100).toFixed(2)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('Deposit')}>
-            <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.actionGrad}>
-              <Text style={styles.actionIcon}>➕</Text>
-              <Text style={styles.actionText}>Add Money</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('Withdraw')}>
-            <LinearGradient colors={['#00332a', '#001a15']} style={[styles.actionGrad, { borderWidth: 1, borderColor: COLORS.green }]}>
-              <Text style={styles.actionIcon}>⬆️</Text>
-              <Text style={[styles.actionText, { color: COLORS.green }]}>Withdraw</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionBtn, blazegold < 500 && styles.disabled]}
-            onPress={handleRedeem}
-            disabled={blazegold < 500}
-          >
-            <LinearGradient colors={['#332200', '#1a1100']} style={[styles.actionGrad, { borderWidth: 1, borderColor: COLORS.gold }]}>
-              <Text style={styles.actionIcon}>🪙</Text>
-              <Text style={[styles.actionText, { color: COLORS.gold }]}>Redeem Coins</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-
-        {/* BlazeGold info */}
-        <View style={styles.coinInfo}>
-          <Text style={styles.coinInfoTitle}>🪙 BlazeGold Info</Text>
-          <View style={styles.coinInfoRow}>
-            <Text style={styles.coinInfoLabel}>Balance</Text>
-            <Text style={styles.coinInfoValue}>{blazegold} BlazeGold</Text>
-          </View>
-          <View style={styles.coinInfoRow}>
-            <Text style={styles.coinInfoLabel}>= Cash Value</Text>
-            <Text style={styles.coinInfoValue}>₹{(blazegold / 100).toFixed(2)}</Text>
-          </View>
-          <View style={styles.coinInfoRow}>
-            <Text style={styles.coinInfoLabel}>Min Redeem</Text>
-            <Text style={styles.coinInfoValue}>500 coins = ₹5</Text>
-          </View>
-          <View style={styles.coinInfoRow}>
-            <Text style={styles.coinInfoLabel}>Rate</Text>
-            <Text style={styles.coinInfoValue}>100 BlazeGold = ₹1</Text>
-          </View>
-          {blazegold >= 500 && (
-            <TouchableOpacity onPress={handleRedeem} style={styles.redeemBtn}>
-              <Text style={styles.redeemBtnText}>Redeem {Math.floor(blazegold / 500) * 500} coins → ₹{(Math.floor(blazegold / 500) * 500 / 100).toFixed(2)}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Transaction history */}
-        <View style={styles.txSection}>
-          <Text style={styles.txTitle}>Recent Transactions</Text>
-          {transactions.length === 0 ? (
-            <Text style={styles.empty}>Koi transaction nahi abhi tak</Text>
-          ) : (
-            transactions.map((tx) => (
-              <View key={tx.id} style={styles.txRow}>
-                <Text style={styles.txIcon}>{txIcon(tx.type)}</Text>
-                <View style={styles.txInfo}>
-                  <Text style={styles.txDesc}>{tx.description}</Text>
-                  <Text style={styles.txDate}>{moment(tx.created_at).fromNow()}</Text>
-                </View>
-                <Text style={[styles.txAmount, { color: txColor(tx.type) }]}>
-                  {['deposit', 'tournament_win', 'bonus', 'coin_redeem'].includes(tx.type) ? '+' : '-'}₹{parseFloat(tx.amount).toFixed(2)}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-
-        <View style={{ height: 90 }} />
-      </ScrollView>
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { padding: SPACING.base, paddingTop: 56 },
-  title: { fontSize: FONTS.sizes.xl, fontWeight: '900', color: COLORS.text },
-  balanceGrid: { padding: SPACING.base, gap: 12 },
-  balanceCard: { borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.borderLight, padding: SPACING.base },
-  mainBalance: { borderColor: 'rgba(255,215,0,0.3)' },
-  balanceLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, letterSpacing: 2, textTransform: 'uppercase' },
-  balanceAmount: { fontSize: FONTS.sizes.hero, fontWeight: '900', color: COLORS.gold, marginVertical: 4 },
-  balanceNote: { fontSize: FONTS.sizes.xs, color: COLORS.textDim },
-  smallBalances: { flexDirection: 'row', gap: 12 },
-  smallCard: { flex: 1, backgroundColor: COLORS.bg3 },
-  smallLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, letterSpacing: 1 },
-  smallAmount: { fontSize: FONTS.sizes.xl, fontWeight: '900', marginVertical: 2 },
-  smallNote: { fontSize: FONTS.sizes.xs, color: COLORS.textDim },
-  actions: { flexDirection: 'row', padding: SPACING.base, gap: 8 },
-  actionBtn: { flex: 1, borderRadius: RADIUS.md, overflow: 'hidden' },
-  actionGrad: { padding: SPACING.md, alignItems: 'center', gap: 4 },
-  actionIcon: { fontSize: 20 },
-  actionText: { fontSize: FONTS.sizes.xs, fontWeight: '800', color: COLORS.white, letterSpacing: 1 },
-  disabled: { opacity: 0.4 },
-  coinInfo: { margin: SPACING.base, backgroundColor: COLORS.bg3, borderRadius: RADIUS.lg, padding: SPACING.base, borderWidth: 1, borderColor: COLORS.goldGlow },
-  coinInfoTitle: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.gold, marginBottom: SPACING.md },
-  coinInfoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
-  coinInfoLabel: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted },
-  coinInfoValue: { fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '700' },
-  redeemBtn: { backgroundColor: COLORS.goldGlow, borderRadius: RADIUS.md, padding: SPACING.md, alignItems: 'center', marginTop: SPACING.md, borderWidth: 1, borderColor: COLORS.gold },
-  redeemBtnText: { color: COLORS.gold, fontWeight: '800', fontSize: FONTS.sizes.base },
-  txSection: { padding: SPACING.base },
-  txTitle: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.md },
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
-  txIcon: { fontSize: 24, width: 36 },
-  txInfo: { flex: 1 },
-  txDesc: { fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '500' },
-  txDate: { fontSize: FONTS.sizes.xs, color: COLORS.textDim, marginTop: 2 },
-  txAmount: { fontSize: FONTS.sizes.base, fontWeight: '800' },
-  empty: { textAlign: 'center', color: COLORS.textDim, padding: SPACING.xl },
-});
-
-export default WalletScreen;

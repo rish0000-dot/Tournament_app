@@ -67,13 +67,13 @@ const spendCoins = async (userId, amount, type, description = '') => {
 };
 
 // ============================================
-// CALCULATE STREAK MULTIPLIER
+// CALCULATE STREAK MULTIPLIER (Aligned with PRD Section 7)
 // ============================================
 const getStreakMultiplier = (winStreak) => {
-  if (winStreak >= 10) return 5.0;
-  if (winStreak >= 5) return 3.0;
-  if (winStreak >= 3) return 2.0;
-  if (winStreak >= 2) return 1.5;
+  if (winStreak >= 5) return 2.0;
+  if (winStreak === 4) return 1.8;
+  if (winStreak === 3) return 1.5;
+  if (winStreak === 2) return 1.2;
   return 1.0;
 };
 

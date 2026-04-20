@@ -1,8 +1,9 @@
 // screens/Tournament/TournamentDetailScreen.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, FlatList
+  StyleSheet, Alert, ActivityIndicator, FlatList,
+  Modal, Animated
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useDispatch, useSelector } from 'react-redux';
@@ -122,9 +123,36 @@ const TournamentDetailScreen = ({ navigation, route }) => {
               <Text style={styles.countdownLabel}>
                 {minutesLeft > 0 ? `Starts in: ${moment(tournament.scheduled_at).fromNow()}` : 'Starting soon...'}
               </Text>
+              {tournament.is_blind_drop && !tournament.blind_revealed && (
+                <Text style={styles.blindCountdown}>
+                   🕵️ Hidden Mode Reveal in {minutesLeft - 10} min
+                </Text>
+              )}
             </View>
           )}
         </LinearGradient>
+
+        {/* Prediction / Watch & Earn (Visible only for Live Tournaments) */}
+        {isLive && !isRegistered && (
+          <View style={styles.predictionCard}>
+            <LinearGradient colors={['rgba(0,245,255,0.1)', 'transparent']} style={styles.predictionGrad}>
+              <Text style={styles.predictionTitle}>🔮 Watch & Earn</Text>
+              <Text style={styles.predictionSub}>Predict the winner and win BlazeGold coins!</Text>
+              <TouchableOpacity
+                style={styles.predictBtn}
+                onPress={() => {
+                  if (tournament.players.length === 0) {
+                    Alert.alert('No Players', 'Lobby is empty, cannot predict.');
+                    return;
+                  }
+                  navigation.navigate('Predict', { tournamentId: id, players: tournament.players });
+                }}
+              >
+                <Text style={styles.predictBtnText}>MAKE A PREDICTION</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        )}
 
         {/* Info Grid */}
         <View style={styles.infoGrid}>

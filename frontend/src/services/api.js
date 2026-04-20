@@ -25,33 +25,9 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       await AsyncStorage.multiRemove(['token', 'user']);
-      // Navigate to login — handled by navigation listener
     }
     return Promise.reject(error.response?.data || error);
   }
 );
 
 export default api;
-
-// ============================================
-// store/index.js
-// ============================================
-import { configureStore } from '@reduxjs/toolkit';
-import authReducer from './slices/authSlice';
-import tournamentReducer from './slices/tournamentSlice';
-import walletReducer from './slices/walletSlice';
-import uiReducer from './slices/uiSlice';
-
-export const store = configureStore({
-  reducer: {
-    auth: authReducer,
-    tournaments: tournamentReducer,
-    wallet: walletReducer,
-    ui: uiReducer,
-  },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware({ serializableCheck: false }),
-});
-
-export type RootState = ReturnType<typeof store.getState>;
-export type AppDispatch = typeof store.dispatch;

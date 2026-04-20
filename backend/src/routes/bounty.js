@@ -1,17 +1,6 @@
 const express = require('express');
 const bountyRouter = express.Router();
 const auth = require('../middleware/auth');
-
-bountyRouter.get('/most-wanted', async (req, res) => {
-  try {
-    const { query } = require('../config/database');
-    const bounties = await query(`
-      SELECT b.*, u.username, u.avatar_url, u.ff_username,
-        u.total_wins, u.current_win_streak
-      FROM bounties b
-      JOIN users u ON b.target_user_id = u.id
-      WHERE b.is_active = TRUE AND b.amount > 0
-      ORDER BY b.amount DESC LIMIT 10
     `);
     res.json({ success: true, data: { bounties: bounties.rows } });
   } catch (err) {
