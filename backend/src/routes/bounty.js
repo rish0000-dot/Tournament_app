@@ -1,17 +1,32 @@
+// routes/bounty.js
 const express = require('express');
 const bountyRouter = express.Router();
 const auth = require('../middleware/auth');
+const bountyCtrl = require('../controllers/bountyController');
+
+// Get most wanted bounties (public)
+bountyRouter.get('/most-wanted', async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    const bounties = await query(`
+      SELECT b.*, u.username, u.avatar_url, u.ff_username, u.total_wins
+      FROM bounties b
+      JOIN users u ON b.target_user_id = u.id
+      WHERE b.is_active = TRUE AND b.amount > 0
+      ORDER BY b.amount DESC
+      LIMIT 20
     `);
     res.json({ success: true, data: { bounties: bounties.rows } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed' });
+    res.status(500).json({ success: false, message: 'Failed to fetch bounties' });
   }
 });
 
+// Claim a bounty
 bountyRouter.post('/claim', auth, async (req, res) => {
   try {
     const { target_username, tournament_id } = req.body;
-    const { queryOne, query, withTransaction } = require('../config/database');
+    const { queryOne, withTransaction } = require('../config/database');
 
     const target = await queryOne('SELECT id FROM users WHERE username=$1', [target_username]);
     if (!target) return res.status(404).json({ success: false, message: 'Player not found' });
@@ -27,7 +42,7 @@ bountyRouter.post('/claim', auth, async (req, res) => {
       return res.status(404).json({ success: false, message: 'No active bounty on this player' });
     }
 
-    // Claim 20% of bounty
+    // Claim 20% of bounty (max ₹100)
     const claimAmount = Math.min(bounty.amount * 0.2, 100);
 
     await withTransaction(async (client) => {
@@ -36,7 +51,6 @@ bountyRouter.post('/claim', auth, async (req, res) => {
          VALUES ($1,$2,$3,$4,$5,'pending')`,
         [bounty.id, req.user.id, target.id, tournament_id, claimAmount]
       );
-      // Reduce bounty amount
       await client.query(
         'UPDATE bounties SET amount=amount-$1, last_claimed_at=NOW() WHERE id=$2',
         [claimAmount, bounty.id]

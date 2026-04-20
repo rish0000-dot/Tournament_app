@@ -26,7 +26,10 @@ import NotificationsScreen from '../screens/Profile/NotificationsScreen';
 import MissionsScreen from '../screens/Profile/MissionsScreen';
 import BountyScreen from '../screens/Home/BountyScreen';
 import PredictScreen from '../screens/Tournament/PredictScreen';
+import LastBulletScreen from '../screens/Tournament/LastBulletScreen';
+import BlindDropRevealScreen from '../screens/Tournament/BlindDropRevealScreen';
 import KYCScreen from '../screens/Profile/KYCScreen';
+import SettingsScreen from '../screens/Profile/SettingsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -107,7 +110,10 @@ const AppNavigator = () => {
             <Stack.Screen name="Missions" component={MissionsScreen} />
             <Stack.Screen name="Bounty" component={BountyScreen} />
             <Stack.Screen name="Predict" component={PredictScreen} />
+            <Stack.Screen name="LastBullet" component={LastBulletScreen} />
+            <Stack.Screen name="BlindDropReveal" component={BlindDropRevealScreen} />
             <Stack.Screen name="KYC" component={KYCScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
           </>
         )}
       </Stack.Navigator>

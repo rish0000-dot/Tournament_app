@@ -1,122 +1,212 @@
+// controllers/predictionController.js
 const { query, queryOne, withTransaction } = require('../config/database');
+const { awardCoins, spendCoins } = require('../services/coinService');
+const logger = require('../utils/logger');
 
 /**
- * Place a bet on a tournament prediction
+ * Place a prediction on a player in a live tournament
  */
-exports.placeBet = async (req, res) => {
+exports.placePrediction = async (req, res) => {
   try {
-    const { tournamentId, type, predictionValue, amount } = req.body;
     const userId = req.user.id;
+    const { tournament_id, prediction_type, predicted_user_ids, entry_coins = 5 } = req.body;
 
-    if (amount <= 0) return res.status(400).json({ success: false, message: 'Invalid bet amount' });
-
-    // 1. Check user balance (BlazeGold)
-    const user = await queryOne('SELECT coin_balance FROM users WHERE id = $1', [userId]);
-    if (user.coin_balance < amount) {
-      return res.status(400).json({ success: false, message: 'Insufficient BlazeGold balance' });
+    // Validate tournament is live
+    const tournament = await queryOne('SELECT * FROM tournaments WHERE id=$1', [tournament_id]);
+    if (!tournament) return res.status(404).json({ success: false, message: 'Tournament not found' });
+    if (tournament.status !== 'live') {
+      return res.status(400).json({ success: false, message: 'Predictions only allowed on live tournaments' });
     }
 
-    // 2. Verify tournament is active for betting
-    const tournament = await queryOne(
-      "SELECT status FROM tournaments WHERE id = $1 AND status = 'starting'",
-      [tournamentId]
+    // Check user is not a participant
+    const isPlayer = await queryOne(
+      'SELECT id FROM tournament_registrations WHERE tournament_id=$1 AND user_id=$2',
+      [tournament_id, userId]
     );
-    if (!tournament) {
-      return res.status(400).json({ success: false, message: 'Betting is closed for this match' });
+    if (isPlayer) {
+      return res.status(400).json({ success: false, message: 'Players cannot predict in their own tournament' });
     }
 
-    await withTransaction(async (client) => {
-      // Deduct coins
-      await client.query(
-        'UPDATE users SET coin_balance = coin_balance - $1 WHERE id = $2',
-        [amount, userId]
-      );
+    // Check existing prediction
+    const existing = await queryOne(
+      'SELECT id FROM predictions WHERE tournament_id=$1 AND user_id=$2',
+      [tournament_id, userId]
+    );
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'You already placed a prediction on this tournament' });
+    }
 
-      // Record bet
-      await client.query(
-        `INSERT INTO prediction_bets (user_id, tournament_id, type, predicted_value, amount)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [userId, tournamentId, type, predictionValue, amount]
-      );
+    // Spend BlazeGold coins
+    await spendCoins(userId, entry_coins, 'prediction', `Prediction on tournament ${tournament.title}`);
 
-      // Update prediction pool
-      await client.query(
-        `INSERT INTO predictions (tournament_id, type, total_pool)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (tournament_id, type)
-         DO UPDATE SET total_pool = predictions.total_pool + $3`,
-        [tournamentId, type, amount]
-      );
+    // Calculate potential payout multiplier based on type
+    let multiplier = 2.0;
+    if (prediction_type === 'winner') multiplier = 3.0;
+    else if (prediction_type === 'top3') multiplier = 1.5;
+    else if (prediction_type === 'kill_leader') multiplier = 2.5;
+
+    const potential_win = entry_coins * multiplier;
+
+    await query(
+      `INSERT INTO predictions (tournament_id, user_id, prediction_type, predicted_user_ids, entry_coins, potential_win)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [tournament_id, userId, prediction_type, predicted_user_ids, entry_coins, potential_win]
+    );
+
+    res.json({
+      success: true,
+      message: 'Prediction placed!',
+      data: { entry_coins, potential_win, multiplier, prediction_type }
     });
-
-    res.json({ success: true, message: 'Bet placed successfully!' });
-  } catch (err) {
-    console.error('Bet Error:', err);
-    res.status(500).json({ success: false, message: 'Failed to place bet' });
+  } catch (error) {
+    if (error.message === 'Insufficient BlazeGold') {
+      return res.status(400).json({ success: false, message: 'Not enough BlazeGold coins' });
+    }
+    logger.error('Place prediction error:', error);
+    res.status(500).json({ success: false, message: 'Failed to place prediction' });
   }
 };
 
 /**
- * Get active predictions and pools for a tournament
+ * Get user's active/recent predictions
  */
-exports.getTournamentPredictions = async (req, res) => {
+exports.getMyPredictions = async (req, res) => {
   try {
-    const { tournamentId } = req.params;
-    const predictions = await query(
-      'SELECT type, total_pool, winning_value FROM predictions WHERE tournament_id = $1',
-      [tournamentId]
-    );
-    res.json({ success: true, data: predictions.rows });
-  } catch (err) {
+    const userId = req.user.id;
+    const predictions = await query(`
+      SELECT p.*, t.title as tournament_title, t.status as tournament_status,
+        t.mode, t.prize_pool
+      FROM predictions p
+      JOIN tournaments t ON p.tournament_id = t.id
+      WHERE p.user_id = $1
+      ORDER BY p.created_at DESC
+      LIMIT 30
+    `, [userId]);
+
+    res.json({ success: true, data: { predictions: predictions.rows } });
+  } catch (error) {
+    logger.error('Get my predictions error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch predictions' });
   }
 };
 
 /**
- * Internal: Settle all bets for a tournament type after results are finalized
+ * Get prediction stats for a tournament
  */
-exports.settlePredictions = async (tournamentId, type, actualWinner) => {
+exports.getTournamentPredictions = async (req, res) => {
   try {
-    await withTransaction(async (client) => {
-      // 1. Mark winning value
-      await client.query(
-        'UPDATE predictions SET winning_value = $1, status = "settled" WHERE tournament_id = $2 AND type = $3',
-        [actualWinner, tournamentId, type]
-      );
+    const { tournamentId } = req.params;
 
-      // 2. Calculate Total Pool and Winning Pool
-      const poolRes = await client.query(
-        'SELECT total_pool FROM predictions WHERE tournament_id = $1 AND type = $2',
-        [tournamentId, type]
-      );
-      const totalPool = parseFloat(poolRes.rows[0].total_pool);
-      const netPool = totalPool * 0.95; // 5% fee as per PRD
+    const stats = await query(`
+      SELECT
+        COUNT(*) as total_predictions,
+        SUM(entry_coins) as total_pool,
+        prediction_type,
+        unnest(predicted_user_ids) as predicted_user,
+        COUNT(*) as prediction_count
+      FROM predictions
+      WHERE tournament_id = $1
+      GROUP BY prediction_type, predicted_user
+      ORDER BY prediction_count DESC
+    `, [tournamentId]);
 
-      const winnersRes = await client.query(
-        'SELECT SUM(amount) as win_pool FROM prediction_bets WHERE tournament_id = $1 AND type = $2 AND predicted_value = $3',
-        [tournamentId, type, actualWinner]
-      );
-      const winningPoolTotal = parseFloat(winnersRes.rows[0].win_pool || 0);
+    // Get registered players for prediction options
+    const players = await query(`
+      SELECT u.id, u.username, u.ff_username, u.avatar_url, u.total_wins, u.total_kills
+      FROM tournament_registrations tr
+      JOIN users u ON tr.user_id = u.id
+      WHERE tr.tournament_id = $1
+      ORDER BY u.total_wins DESC
+    `, [tournamentId]);
 
-      if (winningPoolTotal > 0) {
-        // 3. Distribute rewards proportionally
-        const winners = await client.query(
-          'SELECT user_id, amount FROM prediction_bets WHERE tournament_id = $1 AND type = $2 AND predicted_value = $3',
-          [tournamentId, type, actualWinner]
-        );
-
-        for (const winner of winners.rows) {
-          const payout = (parseFloat(winner.amount) / winningPoolTotal) * netPool;
-          await client.query(
-            'UPDATE users SET coin_balance = coin_balance + $1 WHERE id = $2',
-            [payout, winner.user_id]
-          );
-        }
+    res.json({
+      success: true,
+      data: {
+        prediction_stats: stats.rows,
+        players: players.rows,
+        prediction_types: ['winner', 'top3', 'kill_leader']
       }
     });
-    return true;
-  } catch (err) {
-    console.error('Settlement Error:', err);
-    return false;
+  } catch (error) {
+    logger.error('Get tournament predictions error:', error);
+    res.status(500).json({ success: false, message: 'Failed' });
+  }
+};
+
+/**
+ * Settle predictions after a tournament completes
+ */
+exports.settlePredictions = async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+
+    const tournament = await queryOne('SELECT * FROM tournaments WHERE id=$1', [tournamentId]);
+    if (!tournament || tournament.status !== 'completed') {
+      return res.status(400).json({ success: false, message: 'Tournament must be completed to settle' });
+    }
+
+    // Get results
+    const results = await query(
+      'SELECT * FROM tournament_results WHERE tournament_id=$1 AND status=$2 ORDER BY rank ASC',
+      [tournamentId, 'verified']
+    );
+    if (results.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No verified results yet' });
+    }
+
+    const winnerId = results.rows[0]?.user_id;
+    const top3Ids = results.rows.slice(0, 3).map(r => r.user_id);
+    const killLeaderId = results.rows.reduce((prev, cur) =>
+      (cur.kills || 0) > (prev.kills || 0) ? cur : prev
+    , results.rows[0])?.user_id;
+
+    // Get unsettled predictions
+    const predictions = await query(
+      'SELECT * FROM predictions WHERE tournament_id=$1 AND settled_at IS NULL',
+      [tournamentId]
+    );
+
+    let settledCount = 0;
+    let totalPayout = 0;
+
+    for (const pred of predictions.rows) {
+      let isCorrect = false;
+
+      switch (pred.prediction_type) {
+        case 'winner':
+          isCorrect = pred.predicted_user_ids?.includes(winnerId);
+          break;
+        case 'top3':
+          isCorrect = pred.predicted_user_ids?.some(id => top3Ids.includes(id));
+          break;
+        case 'kill_leader':
+          isCorrect = pred.predicted_user_ids?.includes(killLeaderId);
+          break;
+      }
+
+      const payout = isCorrect ? pred.potential_win : 0;
+
+      await query(
+        `UPDATE predictions SET is_correct=$1, payout=$2, settled_at=NOW() WHERE id=$3`,
+        [isCorrect, payout, pred.id]
+      );
+
+      if (isCorrect && payout > 0) {
+        await awardCoins(pred.user_id, payout, 'prediction', tournamentId,
+          `Prediction correct! ${pred.prediction_type} in ${tournament.title}`);
+        totalPayout += payout;
+      }
+
+      settledCount++;
+    }
+
+    res.json({
+      success: true,
+      message: `Settled ${settledCount} predictions. Total payout: ${totalPayout} BlazeGold.`,
+      data: { settled: settledCount, total_payout: totalPayout }
+    });
+  } catch (error) {
+    logger.error('Settle predictions error:', error);
+    res.status(500).json({ success: false, message: 'Failed to settle predictions' });
   }
 };
